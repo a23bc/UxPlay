@@ -1,4 +1,4 @@
-name: Build UxPlay (RUNNABLE PACKAGE)
+name: Build UxPlay (Slim Version - Safe)
 
 on:
   push:
@@ -33,7 +33,7 @@ jobs:
             mingw-w64-ucrt-x86_64-gst-plugins-ugly
             mingw-w64-ucrt-x86_64-gst-libav
 
-      # ✅ 放入你自己的 Bonjour SDK（必须保留）
+      # ✅ Bonjour SDK（你上传的）
       - name: Install Bonjour SDK
         run: |
           mkdir -p "/c/Program Files/Bonjour SDK/Include"
@@ -53,21 +53,41 @@ jobs:
           cmake .. -G Ninja -DNO_MARCH_NATIVE=ON
           cmake --build .
 
-      # 🚀 ✅ 关键：打包运行环境
+      # 🚀 打包（先全量复制）
       - name: Prepare runtime package
         run: |
           mkdir -p package/lib/gstreamer-1.0
 
-          echo "Copy exe"
           cp build/uxplay.exe package/
-
-          echo "Copy ALL runtime DLLs"
           cp /ucrt64/bin/*.dll package/
-
-          echo "Copy GStreamer plugins"
           cp /ucrt64/lib/gstreamer-1.0/*.dll package/lib/gstreamer-1.0/
 
-          echo "Create start.bat"
+      # 🔥 简单精简（安全删除）
+      - name: Simple prune GStreamer plugins
+        run: |
+          cd package/lib/gstreamer-1.0
+
+          echo "Pruning unnecessary plugins..."
+
+          rm -f libgst*opencv*
+          rm -f libgst*cuda*
+          rm -f libgst*openni*
+          rm -f libgst*webrtc*
+          rm -f libgst*rtspserver*
+          rm -f libgst*vaapi*
+          rm -f libgst*decklink*
+          rm -f libgst*spandsp*
+          rm -f libgst*assrender*
+          rm -f libgst*face*
+          rm -f libgst*onnx*
+          rm -f libgst*nn*
+
+          echo "Remaining plugin count:"
+          ls | wc -l
+
+      # ✅ 启动脚本
+      - name: Create launcher
+        run: |
           cat > package/start.bat << 'EOF'
           @echo off
           set GST_PLUGIN_PATH=%~dp0lib\gstreamer-1.0
@@ -80,11 +100,11 @@ jobs:
       - name: Archive
         shell: powershell
         run: |
-          Compress-Archive -Path package\* -DestinationPath uxplay-windows.zip
+          Compress-Archive -Path package\* -DestinationPath uxplay-windows-slim.zip
 
       # ✅ 上传
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: uxplay-windows
-          path: uxplay-windows.zip
+          name: uxplay-windows-slim
+          path: uxplay-windows-slim.zip
