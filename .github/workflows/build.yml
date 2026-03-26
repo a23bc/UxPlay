@@ -15,6 +15,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # ✅ 安装 Bonjour（Windows 原生）
+      - name: Install Bonjour
+        run: |
+          powershell -Command "choco install bonjour --yes"
+
+      # ✅ 提供 dns_sd.h（关键修复）
+      - name: Add Bonjour headers
+        run: |
+          mkdir -p /ucrt64/include/bonjour
+          curl -L -o /ucrt64/include/bonjour/dns_sd.h https://raw.githubusercontent.com/apple-oss-distributions/mDNSResponder/main/mDNSShared/dns_sd.h
+
       - name: Setup MSYS2
         uses: msys2/setup-msys2@v2
         with:
@@ -36,7 +47,10 @@ jobs:
         run: |
           mkdir build
           cd build
-          cmake .. -G Ninja
+          cmake .. -G Ninja \
+            -DNO_MARCH_NATIVE=ON \
+            -DBONJOUR_INCLUDE_DIR=/ucrt64/include/bonjour \
+            -DBONJOUR_LIBRARY="C:/Program Files/Bonjour/Lib/x64/dnssd.lib"
           cmake --build .
 
       - name: Upload artifact
