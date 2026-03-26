@@ -15,11 +15,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # ✅ 安装 Bonjour runtime（提供 dnssd.dll）
-      - name: Install Bonjour
-        shell: powershell
-        run: |
-          choco install bonjour --yes
 
       # ✅ MSYS2 环境
       - name: Setup MSYS2
