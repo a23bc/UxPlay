@@ -44,11 +44,14 @@ jobs:
         run: |
           mkdir build
           cd build
-
+          
+          ROOT=$(pwd)/..
+          
           cmake .. -G Ninja \
             -DNO_MARCH_NATIVE=ON \
-            -DBONJOUR_INCLUDE_DIR="${{ github.workspace }}/third_party/bonjour_sdk/Include" \
-            -DBONJOUR_LIBRARY="${{ github.workspace }}/third_party/bonjour_sdk/Lib/x64/dnssd.lib"
+            -DBONJOUR_SDK_HOME="" \
+            -DBONJOUR_INCLUDE_DIR="$ROOT/third_party/bonjour_sdk/Include" \
+            -DBONJOUR_LIBRARY="$ROOT/third_party/bonjour_sdk/Lib/x64/dnssd.lib"
 
           cmake --build .
 
