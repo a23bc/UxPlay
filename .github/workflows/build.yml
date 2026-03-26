@@ -15,13 +15,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # ✅ 安装 Bonjour runtime（Windows）
+      # ✅ 安装 Bonjour runtime（仅用于运行 DLL）
       - name: Install Bonjour
         shell: powershell
         run: |
           choco install bonjour --yes
 
-      # ✅ 安装 MSYS2 + 依赖
+      # ✅ MSYS2
       - name: Setup MSYS2
         uses: msys2/setup-msys2@v2
         with:
@@ -38,61 +38,32 @@ jobs:
             mingw-w64-ucrt-x86_64-gst-plugins-bad
             mingw-w64-ucrt-x86_64-gst-plugins-ugly
             mingw-w64-ucrt-x86_64-gst-libav
-            mingw-w64-ucrt-x86_64-tools
 
-      - name: Fake Bonjour SDK (STABLE)
-        run: |
-          mkdir -p "/c/Program Files/Bonjour SDK/Include"
-          mkdir -p "/c/Program Files/Bonjour SDK/Lib/x64"
-
-          # header
-          curl -L -o "/c/Program Files/Bonjour SDK/Include/dns_sd.h" \
-            https://raw.githubusercontent.com/apple-oss-distributions/mDNSResponder/main/mDNSShared/dns_sd.h
-
-          # 找 dll（兼容不同安装路径）
-          if [ -f "/c/Program Files/Bonjour/dnssd.dll" ]; then
-            cp "/c/Program Files/Bonjour/dnssd.dll" /tmp/dnssd.dll
-          elif [ -f "/c/Program Files (x86)/Bonjour/dnssd.dll" ]; then
-            cp "/c/Program Files (x86)/Bonjour/dnssd.dll" /tmp/dnssd.dll
-          else
-            echo "dnssd.dll not found"
-            exit 1
-          fi
-
-          cd /tmp
-
-          # 生成 def
-          gendef dnssd.dll
-
-          # 生成 lib
-          dlltool -d dnssd.def -l "/c/Program Files/Bonjour SDK/Lib/x64/dnssd.lib" -D dnssd.dll
-          
-      # ✅ 编译
+      # ✅ 编译（直接使用你仓库里的 SDK）
       - name: Build
         run: |
           mkdir build
           cd build
-          cmake .. -G Ninja -DNO_MARCH_NATIVE=ON
+
+          cmake .. -G Ninja \
+            -DNO_MARCH_NATIVE=ON \
+            -DBONJOUR_INCLUDE_DIR="${{ github.workspace }}/third_party/bonjour_sdk/Include" \
+            -DBONJOUR_LIBRARY="${{ github.workspace }}/third_party/bonjour_sdk/Lib/x64/dnssd.lib"
+
           cmake --build .
 
-      # ✅ 打包目录
+      # ✅ 打包
       - name: Prepare package
         run: |
           mkdir -p package/lib/gstreamer-1.0
 
-          # 主程序
           cp build/uxplay.exe package/
-
-          # 拷贝所有运行时 DLL
           cp /ucrt64/bin/*.dll package/
-
-          # GStreamer 插件
           cp /ucrt64/lib/gstreamer-1.0/*.dll package/lib/gstreamer-1.0/
 
-          # Bonjour runtime（关键）
-          cp "/c/Program Files/Bonjour/dnssd.dll" package/
+          # runtime dll（必须）
+          cp "/c/Program Files/Bonjour/dnssd.dll" package/ || true
 
-          # 启动脚本
           cat > package/start.bat << 'EOF'
           @echo off
           set GST_PLUGIN_PATH=%~dp0lib\gstreamer-1.0
@@ -101,13 +72,12 @@ jobs:
           pause
           EOF
 
-      # ✅ 打包 zip
+      # ✅ zip
       - name: Archive
         shell: powershell
         run: |
           Compress-Archive -Path package\* -DestinationPath uxplay-windows.zip
 
-      # ✅ 上传 artifact
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
