@@ -1,4 +1,4 @@
-name: Build UxPlay (FINAL WORKING)
+name: Build UxPlay (RUNNABLE PACKAGE)
 
 on:
   push:
@@ -15,8 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-
-      # ✅ MSYS2 环境
+      # ✅ MSYS2
       - name: Setup MSYS2
         uses: msys2/setup-msys2@v2
         with:
@@ -34,31 +33,19 @@ jobs:
             mingw-w64-ucrt-x86_64-gst-plugins-ugly
             mingw-w64-ucrt-x86_64-gst-libav
 
-      # ✅ 关键：把你仓库里的 SDK 塞进“固定路径”
-      - name: Install Bonjour SDK (COPY TO FIXED PATH)
+      # ✅ 放入你自己的 Bonjour SDK（必须保留）
+      - name: Install Bonjour SDK
         run: |
-          set -e
-
           mkdir -p "/c/Program Files/Bonjour SDK/Include"
           mkdir -p "/c/Program Files/Bonjour SDK/Lib/x64"
 
-          SDK_ROOT="$(pwd)/third_party/bonjour_sdk"
+          cp third_party/bonjour_sdk/Include/dns_sd.h \
+            "/c/Program Files/Bonjour SDK/Include/"
 
-          echo "=== SDK 内容 ==="
-          ls "$SDK_ROOT/Include"
-          ls "$SDK_ROOT/Lib/x64"
+          cp third_party/bonjour_sdk/Lib/x64/dnssd.lib \
+            "/c/Program Files/Bonjour SDK/Lib/x64/"
 
-          cp "$SDK_ROOT/Include/dns_sd.h" \
-             "/c/Program Files/Bonjour SDK/Include/"
-
-          cp "$SDK_ROOT/Lib/x64/dnssd.lib" \
-             "/c/Program Files/Bonjour SDK/Lib/x64/"
-
-          echo "=== 验证最终路径 ==="
-          ls "/c/Program Files/Bonjour SDK/Include"
-          ls "/c/Program Files/Bonjour SDK/Lib/x64"
-
-      # ✅ 编译（不要再传任何 Bonjour 参数）
+      # ✅ 编译
       - name: Build
         run: |
           mkdir build
@@ -66,9 +53,38 @@ jobs:
           cmake .. -G Ninja -DNO_MARCH_NATIVE=ON
           cmake --build .
 
-      # ✅ 上传 exe（先保证能出结果）
+      # 🚀 ✅ 关键：打包运行环境
+      - name: Prepare runtime package
+        run: |
+          mkdir -p package/lib/gstreamer-1.0
+
+          echo "Copy exe"
+          cp build/uxplay.exe package/
+
+          echo "Copy ALL runtime DLLs"
+          cp /ucrt64/bin/*.dll package/
+
+          echo "Copy GStreamer plugins"
+          cp /ucrt64/lib/gstreamer-1.0/*.dll package/lib/gstreamer-1.0/
+
+          echo "Create start.bat"
+          cat > package/start.bat << 'EOF'
+          @echo off
+          set GST_PLUGIN_PATH=%~dp0lib\gstreamer-1.0
+          set PATH=%~dp0;%PATH%
+          uxplay.exe
+          pause
+          EOF
+
+      # ✅ 压缩
+      - name: Archive
+        shell: powershell
+        run: |
+          Compress-Archive -Path package\* -DestinationPath uxplay-windows.zip
+
+      # ✅ 上传
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: uxplay
-          path: build/uxplay.exe
+          name: uxplay-windows
+          path: uxplay-windows.zip
