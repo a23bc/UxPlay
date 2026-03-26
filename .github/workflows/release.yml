@@ -1,0 +1,87 @@
+name: Build & Release UxPlay (Portable)
+
+on:
+  push:
+    tags:
+      - 'v*'   # 打 tag 才会发布，比如 v1.0
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup MSYS2
+        id: msys2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-libplist
+            mingw-w64-ucrt-x86_64-openssl
+            mingw-w64-ucrt-x86_64-gstreamer
+            mingw-w64-ucrt-x86_64-gst-plugins-base
+            mingw-w64-ucrt-x86_64-gst-plugins-good
+            mingw-w64-ucrt-x86_64-gst-plugins-bad
+            mingw-w64-ucrt-x86_64-gst-plugins-ugly
+            mingw-w64-ucrt-x86_64-gst-libav
+
+      - name: Build
+        run: |
+          mkdir build
+          cd build
+          cmake .. -G Ninja
+          cmake --build .
+
+      # ✅ 打包绿色版
+      - name: Package portable version
+        run: |
+          mkdir -p release
+
+          # 拷贝 exe
+          cp build/uxplay.exe release/
+
+          # 拷贝运行时 DLL
+          cp /ucrt64/bin/*.dll release/
+
+          # 拷贝 gstreamer 插件
+          mkdir -p release/lib/gstreamer-1.0
+          cp /ucrt64/lib/gstreamer-1.0/*.dll release/lib/gstreamer-1.0/
+
+          # 清理无用插件（避免你刚才那个报错）
+          rm -f release/lib/gstreamer-1.0/libgstcodec2json.dll
+
+          # 写启动脚本
+          cat > release/start.bat << 'EOF'
+          @echo off
+          set PATH=%~dp0;%PATH%
+          set GST_PLUGIN_PATH=%~dp0\lib\gstreamer-1.0
+          set GST_PLUGIN_SYSTEM_PATH=%GST_PLUGIN_PATH%
+
+          uxplay.exe -fs -n "Apple TV"
+          pause
+          EOF
+
+      # ✅ 打包 zip
+      - name: Create zip
+        run: |
+          cd release
+          zip -r ../uxplay-portable.zip .
+
+      # ✅ 发布 Release
+      - name: Upload Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: uxplay-portable.zip
