@@ -1,110 +1,90 @@
-name: Build UxPlay (Slim Version - Safe)
+name: build-uxplay-slim
 
 on:
-  push:
-  pull_request:
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: windows-latest
 
-    defaults:
-      run:
-        shell: msys2 {0}
-
     steps:
-      - uses: actions/checkout@v4
+    - uses: actions/checkout@v4
 
-      # ✅ MSYS2
-      - name: Setup MSYS2
-        uses: msys2/setup-msys2@v2
-        with:
-          msystem: UCRT64
-          update: true
-          install: >-
-            mingw-w64-ucrt-x86_64-gcc
-            mingw-w64-ucrt-x86_64-cmake
-            mingw-w64-ucrt-x86_64-ninja
-            mingw-w64-ucrt-x86_64-libplist
-            mingw-w64-ucrt-x86_64-gstreamer
-            mingw-w64-ucrt-x86_64-gst-plugins-base
-            mingw-w64-ucrt-x86_64-gst-plugins-good
-            mingw-w64-ucrt-x86_64-gst-plugins-bad
-            mingw-w64-ucrt-x86_64-gst-plugins-ugly
-            mingw-w64-ucrt-x86_64-gst-libav
+    - name: Setup MSYS2
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: UCRT64
+        install: >
+          mingw-w64-ucrt-x86_64-gcc
+          mingw-w64-ucrt-x86_64-cmake
+          mingw-w64-ucrt-x86_64-ninja
+          mingw-w64-ucrt-x86_64-pkg-config
+          mingw-w64-ucrt-x86_64-openssl
+          mingw-w64-ucrt-x86_64-libplist
+          mingw-w64-ucrt-x86_64-gstreamer
+          mingw-w64-ucrt-x86_64-gst-plugins-base
+          mingw-w64-ucrt-x86_64-gst-plugins-good
+          mingw-w64-ucrt-x86_64-gst-libav
 
-      # ✅ Bonjour SDK（你上传的）
-      - name: Install Bonjour SDK
-        run: |
-          mkdir -p "/c/Program Files/Bonjour SDK/Include"
-          mkdir -p "/c/Program Files/Bonjour SDK/Lib/x64"
+    - name: Build
+      shell: msys2 {0}
+      run: |
+        mkdir build
+        cd build
 
-          cp third_party/bonjour_sdk/Include/dns_sd.h \
-            "/c/Program Files/Bonjour SDK/Include/"
+        ROOT=$(pwd)/..
 
-          cp third_party/bonjour_sdk/Lib/x64/dnssd.lib \
-            "/c/Program Files/Bonjour SDK/Lib/x64/"
+        cmake .. -G Ninja \
+          -DNO_MARCH_NATIVE=ON \
+          -DBONJOUR_INCLUDE_DIR="$ROOT/third_party/bonjour_sdk/Include" \
+          -DBONJOUR_LIBRARY="$ROOT/third_party/bonjour_sdk/Lib/x64/dnssd.lib"
 
-      # ✅ 编译
-      - name: Build
-        run: |
-          mkdir build
-          cd build
-          cmake .. -G Ninja -DNO_MARCH_NATIVE=ON
-          cmake --build .
+        ninja
 
-      # 🚀 打包（先全量复制）
-      - name: Prepare runtime package
-        run: |
-          mkdir -p package/lib/gstreamer-1.0
+    - name: Collect minimal runtime
+      shell: powershell
+      run: |
+        mkdir dist
 
-          cp build/uxplay.exe package/
-          cp /ucrt64/bin/*.dll package/
-          cp /ucrt64/lib/gstreamer-1.0/*.dll package/lib/gstreamer-1.0/
+        # 主程序
+        copy build\uxplay.exe dist\
 
-      # 🔥 简单精简（安全删除）
-      - name: Simple prune GStreamer plugins
-        run: |
-          cd package/lib/gstreamer-1.0
+        # 只复制必要 DLL（你可以继续删）
+        $dlls = @(
+          "libgcc_s_seh-1.dll",
+          "libstdc++-6.dll",
+          "libwinpthread-1.dll",
+          "libcrypto-3-x64.dll",
+          "libglib-2.0-0.dll",
+          "libgobject-2.0-0.dll",
+          "libgstreamer-1.0-0.dll",
+          "libgstapp-1.0-0.dll",
+          "libplist-2.0.dll"
+        )
 
-          echo "Pruning unnecessary plugins..."
+        foreach ($dll in $dlls) {
+          Get-ChildItem "C:\msys64\ucrt64\bin\$dll" -ErrorAction SilentlyContinue | Copy-Item -Destination dist\
+        }
 
-          rm -f libgst*opencv*
-          rm -f libgst*cuda*
-          rm -f libgst*openni*
-          rm -f libgst*webrtc*
-          rm -f libgst*rtspserver*
-          rm -f libgst*vaapi*
-          rm -f libgst*decklink*
-          rm -f libgst*spandsp*
-          rm -f libgst*assrender*
-          rm -f libgst*face*
-          rm -f libgst*onnx*
-          rm -f libgst*nn*
+        # GStreamer 插件（最关键）
+        mkdir dist\lib\gstreamer-1.0
 
-          echo "Remaining plugin count:"
-          ls | wc -l
+        $plugins = @(
+          "libgstcoreelements.dll",
+          "libgstplayback.dll",
+          "libgstlibav.dll",
+          "libgstaudioconvert.dll",
+          "libgstaudioresample.dll",
+          "libgstvideoconvertscale.dll",
+          "libgstautodetect.dll"
+        )
 
-      # ✅ 启动脚本
-      - name: Create launcher
-        run: |
-          cat > package/start.bat << 'EOF'
-          @echo off
-          set GST_PLUGIN_PATH=%~dp0lib\gstreamer-1.0
-          set PATH=%~dp0;%PATH%
-          uxplay.exe
-          pause
-          EOF
+        foreach ($p in $plugins) {
+          Get-ChildItem "C:\msys64\ucrt64\lib\gstreamer-1.0\$p" -ErrorAction SilentlyContinue | Copy-Item -Destination dist\lib\gstreamer-1.0\
+        }
 
-      # ✅ 压缩
-      - name: Archive
-        shell: powershell
-        run: |
-          Compress-Archive -Path package\* -DestinationPath uxplay-windows-slim.zip
-
-      # ✅ 上传
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: uxplay-windows-slim
-          path: uxplay-windows-slim.zip
+    - name: Upload
+      uses: actions/upload-artifact@v4
+      with:
+        name: uxplay-slim
+        path: dist
