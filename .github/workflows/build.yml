@@ -1,4 +1,4 @@
-name: Build UxPlay Release (Windows)
+name: Build UxPlay (FINAL WORKING)
 
 on:
   push:
@@ -15,13 +15,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # ✅ 安装 Bonjour runtime（仅用于运行 DLL）
+      # ✅ 安装 Bonjour runtime（提供 dnssd.dll）
       - name: Install Bonjour
         shell: powershell
         run: |
           choco install bonjour --yes
 
-      # ✅ MSYS2
+      # ✅ MSYS2 环境
       - name: Setup MSYS2
         uses: msys2/setup-msys2@v2
         with:
@@ -39,50 +39,41 @@ jobs:
             mingw-w64-ucrt-x86_64-gst-plugins-ugly
             mingw-w64-ucrt-x86_64-gst-libav
 
-      # ✅ 编译（直接使用你仓库里的 SDK）
+      # ✅ 关键：把你仓库里的 SDK 塞进“固定路径”
+      - name: Install Bonjour SDK (COPY TO FIXED PATH)
+        run: |
+          set -e
+
+          mkdir -p "/c/Program Files/Bonjour SDK/Include"
+          mkdir -p "/c/Program Files/Bonjour SDK/Lib/x64"
+
+          SDK_ROOT="$(pwd)/third_party/bonjour_sdk"
+
+          echo "=== SDK 内容 ==="
+          ls "$SDK_ROOT/Include"
+          ls "$SDK_ROOT/Lib/x64"
+
+          cp "$SDK_ROOT/Include/dns_sd.h" \
+             "/c/Program Files/Bonjour SDK/Include/"
+
+          cp "$SDK_ROOT/Lib/x64/dnssd.lib" \
+             "/c/Program Files/Bonjour SDK/Lib/x64/"
+
+          echo "=== 验证最终路径 ==="
+          ls "/c/Program Files/Bonjour SDK/Include"
+          ls "/c/Program Files/Bonjour SDK/Lib/x64"
+
+      # ✅ 编译（不要再传任何 Bonjour 参数）
       - name: Build
         run: |
           mkdir build
           cd build
-          
-          ROOT=$(pwd)/..
-          
-          cmake .. -G Ninja \
-            -DNO_MARCH_NATIVE=ON \
-            -DBONJOUR_SDK_HOME="" \
-            -DBONJOUR_INCLUDE_DIR="$ROOT/third_party/bonjour_sdk/Include" \
-            -DBONJOUR_LIBRARY="$ROOT/third_party/bonjour_sdk/Lib/x64/dnssd.lib"
-
+          cmake .. -G Ninja -DNO_MARCH_NATIVE=ON
           cmake --build .
 
-      # ✅ 打包
-      - name: Prepare package
-        run: |
-          mkdir -p package/lib/gstreamer-1.0
-
-          cp build/uxplay.exe package/
-          cp /ucrt64/bin/*.dll package/
-          cp /ucrt64/lib/gstreamer-1.0/*.dll package/lib/gstreamer-1.0/
-
-          # runtime dll（必须）
-          cp "/c/Program Files/Bonjour/dnssd.dll" package/ || true
-
-          cat > package/start.bat << 'EOF'
-          @echo off
-          set GST_PLUGIN_PATH=%~dp0lib\gstreamer-1.0
-          set PATH=%~dp0;%PATH%
-          uxplay.exe
-          pause
-          EOF
-
-      # ✅ zip
-      - name: Archive
-        shell: powershell
-        run: |
-          Compress-Archive -Path package\* -DestinationPath uxplay-windows.zip
-
+      # ✅ 上传 exe（先保证能出结果）
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: uxplay-windows
-          path: uxplay-windows.zip
+          name: uxplay
+          path: build/uxplay.exe
