@@ -38,19 +38,35 @@ jobs:
             mingw-w64-ucrt-x86_64-gst-plugins-bad
             mingw-w64-ucrt-x86_64-gst-plugins-ugly
             mingw-w64-ucrt-x86_64-gst-libav
+            mingw-w64-ucrt-x86_64-tools   # ✅ 关键！
 
-      # ✅ 伪造 Bonjour SDK（关键！！）
-      - name: Fake Bonjour SDK
+      - name: Fake Bonjour SDK (STABLE)
         run: |
           mkdir -p "/c/Program Files/Bonjour SDK/Include"
           mkdir -p "/c/Program Files/Bonjour SDK/Lib/x64"
 
+          # header
           curl -L -o "/c/Program Files/Bonjour SDK/Include/dns_sd.h" \
             https://raw.githubusercontent.com/apple-oss-distributions/mDNSResponder/main/mDNSShared/dns_sd.h
 
-          cp "/c/Program Files/Bonjour/Lib/x64/dnssd.lib" \
-            "/c/Program Files/Bonjour SDK/Lib/x64/"
+          # 找 dll（兼容不同安装路径）
+          if [ -f "/c/Program Files/Bonjour/dnssd.dll" ]; then
+            cp "/c/Program Files/Bonjour/dnssd.dll" /tmp/dnssd.dll
+          elif [ -f "/c/Program Files (x86)/Bonjour/dnssd.dll" ]; then
+            cp "/c/Program Files (x86)/Bonjour/dnssd.dll" /tmp/dnssd.dll
+          else
+            echo "dnssd.dll not found"
+            exit 1
+          fi
 
+          cd /tmp
+
+          # 生成 def
+          gendef dnssd.dll
+
+          # 生成 lib
+          dlltool -d dnssd.def -l "/c/Program Files/Bonjour SDK/Lib/x64/dnssd.lib" -D dnssd.dll
+          
       # ✅ 编译
       - name: Build
         run: |
