@@ -1,4 +1,4 @@
-name: build-uxplay-slim
+name: Build uxplay (Windows Slim)
 
 on:
   workflow_dispatch:
@@ -7,89 +7,94 @@ jobs:
   build:
     runs-on: windows-latest
 
+    defaults:
+      run:
+        shell: msys2 {0}
+
     steps:
-    - uses: actions/checkout@v4
+      # 1️⃣ 拉代码
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: Setup MSYS2
-      uses: msys2/setup-msys2@v2
-      with:
-        msystem: UCRT64
-        install: >
-          mingw-w64-ucrt-x86_64-gcc
-          mingw-w64-ucrt-x86_64-cmake
-          mingw-w64-ucrt-x86_64-ninja
-          mingw-w64-ucrt-x86_64-pkg-config
-          mingw-w64-ucrt-x86_64-openssl
-          mingw-w64-ucrt-x86_64-libplist
-          mingw-w64-ucrt-x86_64-gstreamer
-          mingw-w64-ucrt-x86_64-gst-plugins-base
-          mingw-w64-ucrt-x86_64-gst-plugins-good
-          mingw-w64-ucrt-x86_64-gst-libav
+      # 2️⃣ 安装 MSYS2
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-pkg-config
+            mingw-w64-ucrt-x86_64-openssl
+            mingw-w64-ucrt-x86_64-libplist
+            mingw-w64-ucrt-x86_64-gstreamer
+            mingw-w64-ucrt-x86_64-gst-plugins-base
+            mingw-w64-ucrt-x86_64-gst-plugins-good
 
-      # ✅ Bonjour SDK（你上传的）
-    - name: Install Bonjour SDK
-      run: |
-        mkdir -p "/c/Program Files/Bonjour SDK/Include"
-        mkdir -p "/c/Program Files/Bonjour SDK/Lib/x64"
+      # 3️⃣ ✅ 你自己的 Bonjour SDK（关键）
+      - name: Install Bonjour SDK
+        run: |
+          mkdir -p "/c/Program Files/Bonjour SDK/Include"
+          mkdir -p "/c/Program Files/Bonjour SDK/Lib/x64"
 
-         cp third_party/bonjour_sdk/Include/dns_sd.h \
-          "/c/Program Files/Bonjour SDK/Include/"
+          cp third_party/bonjour_sdk/Include/dns_sd.h \
+            "/c/Program Files/Bonjour SDK/Include/"
 
-         cp third_party/bonjour_sdk/Lib/x64/dnssd.lib \
-           "/c/Program Files/Bonjour SDK/Lib/x64/"
-            
-     # ✅ 编译
-    - name: Build
-      run: |
-         mkdir build
-         cd build
-         cmake .. -G Ninja -DNO_MARCH_NATIVE=ON
-         cmake --build .
+          cp third_party/bonjour_sdk/Lib/x64/dnssd.lib \
+            "/c/Program Files/Bonjour SDK/Lib/x64/"
 
-    - name: Collect minimal runtime
-      shell: powershell
-      run: |
-        mkdir dist
+      # 4️⃣ 编译
+      - name: Build
+        run: |
+          mkdir build
+          cd build
 
-        # 主程序
-        copy build\uxplay.exe dist\
+          cmake .. -G Ninja -DNO_MARCH_NATIVE=ON
+          cmake --build .
 
-        # 只复制必要 DLL（你可以继续删）
-        $dlls = @(
-          "libgcc_s_seh-1.dll",
-          "libstdc++-6.dll",
-          "libwinpthread-1.dll",
-          "libcrypto-3-x64.dll",
-          "libglib-2.0-0.dll",
-          "libgobject-2.0-0.dll",
-          "libgstreamer-1.0-0.dll",
-          "libgstapp-1.0-0.dll",
-          "libplist-2.0.dll"
-        )
+      # 5️⃣ ✅ 精简打包（重点）
+      - name: Package (Slim)
+        run: |
+          mkdir dist
 
-        foreach ($dll in $dlls) {
-          Get-ChildItem "C:\msys64\ucrt64\bin\$dll" -ErrorAction SilentlyContinue | Copy-Item -Destination dist\
-        }
+          # 主程序
+          cp build/uxplay.exe dist/
 
-        # GStreamer 插件（最关键）
-        mkdir dist\lib\gstreamer-1.0
+          # MSYS2 runtime（必须）
+          cp /ucrt64/bin/libgcc_s_seh-1.dll dist/
+          cp /ucrt64/bin/libstdc++-6.dll dist/
+          cp /ucrt64/bin/libwinpthread-1.dll dist/
 
-        $plugins = @(
-          "libgstcoreelements.dll",
-          "libgstplayback.dll",
-          "libgstlibav.dll",
-          "libgstaudioconvert.dll",
-          "libgstaudioresample.dll",
-          "libgstvideoconvertscale.dll",
-          "libgstautodetect.dll"
-        )
+          # OpenSSL
+          cp /ucrt64/bin/libcrypto-3-x64.dll dist/
 
-        foreach ($p in $plugins) {
-          Get-ChildItem "C:\msys64\ucrt64\lib\gstreamer-1.0\$p" -ErrorAction SilentlyContinue | Copy-Item -Destination dist\lib\gstreamer-1.0\
-        }
+          # plist
+          cp /ucrt64/bin/libplist-2.0.dll dist/
 
-    - name: Upload
-      uses: actions/upload-artifact@v4
-      with:
-        name: uxplay-slim
-        path: dist
+          # glib
+          cp /ucrt64/bin/libglib-2.0-0.dll dist/
+          cp /ucrt64/bin/libgobject-2.0-0.dll dist/
+          cp /ucrt64/bin/libgio-2.0-0.dll dist/
+
+          # gstreamer核心（最小集）
+          cp /ucrt64/bin/libgstreamer-1.0-0.dll dist/
+          cp /ucrt64/bin/libgstapp-1.0-0.dll dist/
+
+          # 👉 插件目录（只带必要的）
+          mkdir -p dist/lib/gstreamer-1.0
+
+          cp /ucrt64/lib/gstreamer-1.0/libgstcoreelements.dll dist/lib/gstreamer-1.0/
+          cp /ucrt64/lib/gstreamer-1.0/libgstplayback.dll dist/lib/gstreamer-1.0/
+          cp /ucrt64/lib/gstreamer-1.0/libgstvideoconvertscale.dll dist/lib/gstreamer-1.0/
+          cp /ucrt64/lib/gstreamer-1.0/libgstaudioconvert.dll dist/lib/gstreamer-1.0/
+          cp /ucrt64/lib/gstreamer-1.0/libgstaudioresample.dll dist/lib/gstreamer-1.0/
+          cp /ucrt64/lib/gstreamer-1.0/libgstautodetect.dll dist/lib/gstreamer-1.0/
+
+      # 6️⃣ 上传
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: uxplay-windows-slim
+          path: dist
