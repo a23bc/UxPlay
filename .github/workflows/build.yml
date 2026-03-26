@@ -15,17 +15,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # ✅ 安装 Bonjour（Windows 原生）
+      # ✅ 必须用 PowerShell（关键修复）
       - name: Install Bonjour
+        shell: powershell
         run: |
-          powershell -Command "choco install bonjour --yes"
+          choco install bonjour --yes
 
-      # ✅ 提供 dns_sd.h（关键修复）
-      - name: Add Bonjour headers
-        run: |
-          mkdir -p /ucrt64/include/bonjour
-          curl -L -o /ucrt64/include/bonjour/dns_sd.h https://raw.githubusercontent.com/apple-oss-distributions/mDNSResponder/main/mDNSShared/dns_sd.h
-
+      # ✅ 再 setup MSYS2
       - name: Setup MSYS2
         uses: msys2/setup-msys2@v2
         with:
@@ -43,6 +39,12 @@ jobs:
             mingw-w64-ucrt-x86_64-gst-plugins-ugly
             mingw-w64-ucrt-x86_64-gst-libav
 
+      # ✅ 再放 header（用 msys2 shell）
+      - name: Add Bonjour headers
+        run: |
+          mkdir -p /ucrt64/include/bonjour
+          curl -L -o /ucrt64/include/bonjour/dns_sd.h https://raw.githubusercontent.com/apple-oss-distributions/mDNSResponder/main/mDNSShared/dns_sd.h
+
       - name: Build
         run: |
           mkdir build
@@ -52,9 +54,3 @@ jobs:
             -DBONJOUR_INCLUDE_DIR=/ucrt64/include/bonjour \
             -DBONJOUR_LIBRARY="C:/Program Files/Bonjour/Lib/x64/dnssd.lib"
           cmake --build .
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: uxplay
-          path: build/uxplay.exe
